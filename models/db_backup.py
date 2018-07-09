@@ -2,12 +2,14 @@
 
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import Warning
+import odoo
+from odoo.http import content_disposition
 
 import logging
-
 _logger = logging.getLogger(__name__)
 from ftplib import FTP
 import os
+import datetime
 
 try:
     from xmlrpc import client as xmlrpclib
@@ -15,13 +17,14 @@ except ImportError:
     import xmlrpclib
 import time
 import base64
+import socket
 
-try:
-    import paramiko
-except ImportError:
-    raise ImportError(
-        'This module needs paramiko to automatically write backups to the FTP through SFTP. Please install paramiko on your system. (sudo pip3 install paramiko)')
 
+# try:
+    # import paramiko
+# except ImportError:
+    # raise ImportError(
+        # 'This module needs paramiko to automatically write backups to the FTP through SFTP. Please install paramiko on your system. (sudo pip3 install paramiko)')
 
 def execute(connector, method, *args):
     res = False
@@ -29,7 +32,7 @@ def execute(connector, method, *args):
         res = getattr(connector, method)(*args)
     except socket.error as error:
         _logger.critical('Error while executing the method "execute". Error: ' + str(error))
-        raise e
+        raise error
     return res
 
 
@@ -115,7 +118,7 @@ class db_backup(models.Model):
             try:
                 s = paramiko.SSHClient()
                 s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                s.connect(ipHost, 22, usernameLogin, passwordLogin, timeout=10)
+                s.connect(ipHost, portHost, usernameLogin, passwordLogin, timeout=10)
                 sftp = s.open_sftp()
                 messageTitle = _("Connection Test Succeeded!\nEverything seems properly set up for FTP back-ups!")
             except Exception as e:
@@ -149,24 +152,23 @@ class db_backup(models.Model):
                 except:
                     raise
                 # Create name for dumpfile.
-                bkp_file = '%s_%s.%s' % (time.strftime('%d_%m_%Y_%H_%M_%S'), rec.name, rec.backup_type)
+                bkp_file = '%s_%s.%s' % (time.strftime('%Y_%m_%d_%H_%M_%S'), rec.name, rec.backup_type)
                 file_path = os.path.join(rec.folder, bkp_file)
                 uri = 'http://' + rec.host + ':' + rec.port
                 conn = xmlrpclib.ServerProxy(uri + '/xmlrpc/db')
                 bkp = ''
                 try:
-                    bkp = execute(conn, 'dump', tools.config['admin_passwd'], rec.name, rec.backup_type)
-                except:
+                    # try to backup database and write it away
+                    fp = open(file_path, 'wb')
+                    odoo.service.db.dump_db(rec.name, fp, rec.backup_type)
+                    fp.close()
+                except Exception as error:
                     _logger.debug(
                         "Couldn't backup database %s. Bad database administrator password for server running at http://%s:%s" % (
                         rec.name, rec.host, rec.port))
+                    _logger.debug("Exact error from the exception: " + str(error))
                     continue
-                bkp = base64.b64decode(bkp.encode('ascii'))
 
-                # Write backup
-                fp = open(file_path, 'wb')
-                fp.write(bkp)
-                fp.close()
             else:
                 _logger.debug("database %s doesn't exist on http://%s:%s" % (rec.name, rec.host, rec.port))
 
@@ -185,7 +187,7 @@ class db_backup(models.Model):
                     try:
                         s = paramiko.SSHClient()
                         s.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                        s.connect(ipHost, 22, usernameLogin, passwordLogin, timeout=20)
+                        s.connect(ipHost, portHost, usernameLogin, passwordLogin, timeout=20)
                         sftp = s.open_sftp()
                     except Exception as error:
                         _logger.critical('Error connecting to remote server! Error: ' + str(error))
