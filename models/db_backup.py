@@ -20,11 +20,11 @@ import base64
 import socket
 
 
-try:
-    import paramiko
-except ImportError:
-    raise ImportError(
-        'This module needs paramiko to automatically write backups to the FTP through SFTP. Please install paramiko on your system. (sudo pip3 install paramiko)')
+# try:
+    # import paramiko
+# except ImportError:
+    # raise ImportError(
+        # 'This module needs paramiko to automatically write backups to the FTP through SFTP. Please install paramiko on your system. (sudo pip3 install paramiko)')
 
 
 def execute(connector, method, *args):
